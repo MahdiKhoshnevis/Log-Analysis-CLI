@@ -8,3 +8,11 @@ HamAmooz_task.pdf
 __MACOSX/
 access.log/__MACOSX/
 **/__MACOSX/
+
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+
+# Ignore generated output charts
+*.png
+
