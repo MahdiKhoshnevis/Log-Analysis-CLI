@@ -1,9 +1,12 @@
 import os
+import time
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="terminal"):
+    start_time_perf = time.perf_counter()
+    
     # Store counts of requests by hour datetime object
     hourly_counts = {}
     
@@ -57,6 +60,8 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
         count = hourly_counts.get(h, 0)
         final_data.append((h, count))
         
+    elapsed_time = time.perf_counter() - start_time_perf
+
     # Build formatted text report
     output_lines = []
     output_lines.append("\n" + "="*45)
@@ -65,11 +70,14 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     for h, count in final_data:
         time_str = h.strftime("%Y-%m-%d %H:00")
         output_lines.append(f"{time_str:<25} | {count:<15,}")
+    output_lines.append("="*45)
+    output_lines.append(f"Execution Time: {elapsed_time:.4f} seconds")
     output_lines.append("="*45 + "\n")
     text_report = "\n".join(output_lines)
     
     # Build JSON structured data
     json_data = {
+        "execution_time_sec": round(elapsed_time, 4),
         "hourly_traffic": [
             {"time": h.strftime("%Y-%m-%d %H:00"), "count": count}
             for h, count in final_data

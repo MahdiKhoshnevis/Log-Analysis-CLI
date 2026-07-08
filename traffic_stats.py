@@ -1,8 +1,11 @@
 import os
+import time
 from datetime import datetime
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, format_opt="terminal"):
+    start_time_perf = time.perf_counter()
+    
     total_requests = 0
     unique_ips = set()
     path_counts = {}
@@ -63,6 +66,8 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
     # Calculate error rate percentage
     error_rate = (error_requests / total_requests) * 100
 
+    elapsed_time = time.perf_counter() - start_time_perf
+
     # Build report text content
     output_lines = []
     output_lines.append("\n" + "="*50)
@@ -71,6 +76,7 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
     output_lines.append(f"Total Requests:           {total_requests:,}")
     output_lines.append(f"Unique Client IPs:        {total_unique_ips:,}")
     output_lines.append(f"Error Rate (4xx & 5xx):   {error_rate:.2f}% ({error_requests:,} requests)")
+    output_lines.append(f"Execution Time:           {elapsed_time:.4f} seconds")
     output_lines.append("="*50)
     output_lines.append(f"Top {top_n} Most Frequent Endpoints:")
     output_lines.append("-"*50)
@@ -85,6 +91,7 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
         "unique_ips": total_unique_ips,
         "error_requests": error_requests,
         "error_rate_pct": error_rate,
+        "execution_time_sec": round(elapsed_time, 4),
         "top_endpoints": [
             {"path": path, "count": count} for path, count in top_endpoints
         ]

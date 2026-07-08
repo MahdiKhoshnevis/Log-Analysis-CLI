@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import argparse
 from datetime import datetime
 from read_log import parse_line, LogEntry, open_log_file, parse_filter_datetime, write_output
@@ -24,6 +25,8 @@ def is_bot_user_agent(ua: str) -> bool:
     return any(keyword in ua_lower for keyword in BOT_KEYWORDS)
 
 def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_time=None, format_opt="terminal"):
+    start_time_perf = time.perf_counter()
+    
     ip_stats = {}
     time_format = "%d/%b/%Y:%H:%M:%S %z"
 
@@ -106,12 +109,16 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
     threshold_error_ratio = get_percentile(error_ratios, 0.99)
     threshold_bot_sensitive = get_percentile(bot_sensitives, 0.99)
 
+    elapsed_time = time.perf_counter() - start_time_perf
+
     report_lines = []
     report_lines.append("\n" + "#" * 65)
     report_lines.append("           SUSPICIOUS BEHAVIOR ANALYSIS REPORT (99th Percentile)")
+    report_lines.append(f"           Execution Time: {elapsed_time:.4f} seconds")
     report_lines.append("#" * 65 + "\n")
 
     json_data = {
+        "execution_time_sec": round(elapsed_time, 4),
         "thresholds": {
             "total_requests": threshold_total,
             "auth_failures": threshold_auth,
