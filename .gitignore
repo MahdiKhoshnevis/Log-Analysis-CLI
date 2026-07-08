@@ -1,0 +1,10 @@
+# Ignore log zip archive
+access.log.zip
+
+# Ignore assignment description PDF
+HamAmooz_task.pdf
+
+# Ignore macOS metadata directories
+__MACOSX/
+access.log/__MACOSX/
+**/__MACOSX/
