@@ -1,7 +1,7 @@
 import os
 import re
 import argparse
-from read_log import parse_line, LogEntry
+from read_log import parse_line, LogEntry, open_log_file
 
 # Sensitive endpoints to monitor for automated access
 SENSITIVE_PATHS = {"/login", "/api/checkout", "/admin"}
@@ -37,7 +37,7 @@ def analyze_suspicious_behavior(log_file_path):
 
     print(f"Reading logs and aggregating stats per IP from '{log_file_path}'...")
     try:
-        with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
+        with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
                 if entry.ip == "EMPTY_IP":

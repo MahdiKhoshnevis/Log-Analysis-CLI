@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-from read_log import parse_line
+from read_log import parse_line, open_log_file
 
 def analyze_traffic(log_file_path):
     
@@ -13,7 +13,7 @@ def analyze_traffic(log_file_path):
     
     print(f"Reading and parsing logs line-by-line from '{log_file_path}'...")
     try:
-        with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
+        with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
                 if entry.timestamp != "EMPTY_TIME":

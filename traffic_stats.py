@@ -1,5 +1,5 @@
 import os
-from read_log import parse_line
+from read_log import parse_line, open_log_file
 
 def calculate_stats(log_file_path):
     
@@ -10,7 +10,7 @@ def calculate_stats(log_file_path):
     
     print(f"Reading and aggregating log stats line-by-line from '{log_file_path}'...")
     try:
-        with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
+        with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
                 

@@ -1,5 +1,6 @@
 import os
 import re
+import gzip
 
 class LogEntry:
     def __init__(self, ip="EMPTY_IP", timestamp="EMPTY_TIME", method="EMPTY_METHOD",
@@ -97,6 +98,14 @@ def parse_line(line: str) -> LogEntry:
         user_agent=clean(raw_user_agent, "EMPTY_USER_AGENT")
     )
 
+def open_log_file(file_path):
+    """
+    Opens a file, transparently handling gzip compressed (.gz) logs as text.
+    """
+    if file_path.endswith(".gz"):
+        return gzip.open(file_path, "rt", encoding="utf-8", errors="replace")
+    return open(file_path, "r", encoding="utf-8", errors="replace")
+
 if __name__ == "__main__":
     import argparse
 
@@ -108,7 +117,7 @@ if __name__ == "__main__":
     
     print(f"Testing parser on the first 5 lines of the log file at '{log_file_path}':\n")
     try:
-        with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
+        with open_log_file(log_file_path) as file:
             for idx, line in enumerate(file, 1):
                 entry = parse_line(line)
                 print(f"--- Line {idx} ---")
