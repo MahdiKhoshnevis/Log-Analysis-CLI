@@ -1,0 +1,205 @@
+import os
+import time
+import argparse
+from datetime import datetime, timedelta
+from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
+
+def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requests=10,
+                       start_time=None, end_time=None, format_opt="terminal"):
+    start_time_perf = time.perf_counter()
+    
+    # minute_stats structure: { minute_dt: {'total': int, '5xx': int} }
+    minute_stats = {}
+    time_format = "%d/%b/%Y:%H:%M:%S %z"
+    
+    print(f"Reading logs and aggregating 5xx counts by minute from '{log_file_path}'...")
+    try:
+        with open_log_file(log_file_path) as file:
+            for line in file:
+                entry = parse_line(line)
+                if entry.timestamp == "EMPTY_TIME":
+                    continue
+                
+                try:
+                    dt = datetime.strptime(entry.timestamp, time_format)
+                    
+                    # Apply start/end filters
+                    if start_time and dt < start_time:
+                        continue
+                    if end_time and dt > end_time:
+                        continue
+                        
+                    # Round to the minute
+                    min_dt = dt.replace(second=0, microsecond=0)
+                    
+                    if min_dt not in minute_stats:
+                        minute_stats[min_dt] = {"total": 0, "5xx": 0}
+                    
+                    minute_stats[min_dt]["total"] += 1
+                    if entry.status.startswith("5"):
+                        minute_stats[min_dt]["5xx"] += 1
+                        
+                except Exception:
+                    pass
+    except FileNotFoundError:
+        print(f"Error: Log file not found at {log_file_path}")
+        return
+
+    if not minute_stats:
+        print("No traffic data found matching the filter criteria.")
+        return
+
+    # Generate sequential list of minutes between min and max minute
+    min_minute = min(minute_stats.keys())
+    max_minute = max(minute_stats.keys())
+    
+    minutes_list = []
+    curr = min_minute
+    while curr <= max_minute:
+        minutes_list.append(curr)
+        curr += timedelta(minutes=1)
+        
+    # Standardize data: fill missing minutes with 0
+    clean_stats = []
+    for m in minutes_list:
+        clean_stats.append(minute_stats.get(m, {"total": 0, "5xx": 0}))
+
+    # Calculate sliding window metrics
+    # anomalies: list of bool indicating if the window starting at index i is anomalous
+    anomalies = [False] * len(minutes_list)
+    window_rates = [0.0] * len(minutes_list)
+    window_totals = [0] * len(minutes_list)
+    window_5xxs = [0] * len(minutes_list)
+    
+    threshold_rate = threshold_pct / 100.0
+
+    for i in range(len(minutes_list)):
+        # Sum counts inside the window [i, i + window_size)
+        total_in_window = 0
+        fivexx_in_window = 0
+        for j in range(i, min(i + window_size, len(minutes_list))):
+            total_in_window += clean_stats[j]["total"]
+            fivexx_in_window += clean_stats[j]["5xx"]
+            
+        rate = (fivexx_in_window / total_in_window) if total_in_window > 0 else 0.0
+        
+        window_rates[i] = rate
+        window_totals[i] = total_in_window
+        window_5xxs[i] = fivexx_in_window
+        
+        # Anomaly criteria: rate exceeds threshold and min_requests are met
+        if rate >= threshold_rate and total_in_window >= min_requests:
+            anomalies[i] = True
+
+    # Merge contiguous/overlapping anomalous windows into unified outages
+    outages = []
+    current_outage = None
+    
+    for i, is_anomaly in enumerate(anomalies):
+        if is_anomaly:
+            win_start = minutes_list[i]
+            win_end = minutes_list[i] + timedelta(minutes=window_size)
+            
+            if current_outage is None:
+                current_outage = {
+                    "start": win_start,
+                    "end": win_end,
+                    "peak_rate": window_rates[i],
+                    "total_reqs": 0,  # Computed below
+                    "total_5xx": 0,   # Computed below
+                }
+            else:
+                # Extend the end of the outage period
+                current_outage["end"] = win_end
+                current_outage["peak_rate"] = max(current_outage["peak_rate"], window_rates[i])
+        else:
+            if current_outage is not None:
+                outages.append(current_outage)
+                current_outage = None
+                
+    if current_outage is not None:
+        outages.append(current_outage)
+
+    # Compute exact request and 5xx counts for each merged outage period
+    for outage in outages:
+        o_start = outage["start"]
+        o_end = outage["end"]
+        
+        o_total = 0
+        o_5xx = 0
+        curr_m = o_start
+        while curr_m < o_end:
+            stat = minute_stats.get(curr_m, {"total": 0, "5xx": 0})
+            o_total += stat["total"]
+            o_5xx += stat["5xx"]
+            curr_m += timedelta(minutes=1)
+            
+        outage["total_reqs"] = o_total
+        outage["total_5xx"] = o_5xx
+        outage["average_rate"] = (o_5xx / o_total) if o_total > 0 else 0.0
+
+    elapsed_time = time.perf_counter() - start_time_perf
+
+    # Build report text content
+    report_lines = []
+    report_lines.append("\n" + "="*70)
+    report_lines.append("                SYSTEM 5xx OUTAGE & INCIDENT REPORT")
+    report_lines.append(f"                Execution Time: {elapsed_time:.4f} seconds")
+    report_lines.append("="*70)
+    report_lines.append(f"Parameters: Window Size = {window_size}m | Threshold = {threshold_pct}% | Min Requests = {min_requests}")
+    report_lines.append("-"*70)
+    
+    if not outages:
+        report_lines.append("No system outage periods detected matching the criteria.")
+    else:
+        report_lines.append(f"{'Start Time (UTC)':<17} | {'End Time (UTC)':<17} | {'Duration':<8} | {'Peak Rate':<9} | {'5xx Count':<9}")
+        report_lines.append("-"*70)
+        for out in outages:
+            dur_mins = int((out["end"] - out["start"]).total_seconds() / 60)
+            dur_str = f"{dur_mins} mins"
+            start_str = out["start"].strftime("%Y-%m-%d %H:%M")
+            end_str = out["end"].strftime("%Y-%m-%d %H:%M")
+            peak_str = f"{out['peak_rate'] * 100:.1f}%"
+            report_lines.append(f"{start_str:<17} | {end_str:<17} | {dur_str:<8} | {peak_str:<9} | {out['total_5xx']:<9,}")
+    report_lines.append("="*70 + "\n")
+    
+    text_report = "\n".join(report_lines)
+    
+    # Build JSON structure
+    json_data = {
+        "execution_time_sec": round(elapsed_time, 4),
+        "parameters": {
+            "window_size_minutes": window_size,
+            "threshold_percent": threshold_pct,
+            "min_requests": min_requests
+        },
+        "incidents": [
+            {
+                "start_time": out["start"].strftime("%Y-%m-%d %H:%M:%S"),
+                "end_time": out["end"].strftime("%Y-%m-%d %H:%M:%S"),
+                "duration_minutes": int((out["end"] - out["start"]).total_seconds() / 60),
+                "peak_error_rate_pct": round(out["peak_rate"] * 100, 2),
+                "average_error_rate_pct": round(out["average_rate"] * 100, 2),
+                "total_requests": out["total_reqs"],
+                "total_5xx_errors": out["total_5xx"]
+            }
+            for out in outages
+        ]
+    }
+    
+    write_output(text_report, json_data, format_opt, "system_outages")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Identify periods of elevated 5xx server errors.")
+    parser.add_argument("log_path", type=str, help="Path to the access log file")
+    parser.add_argument("--window", type=int, default=5, help="Sliding window size in minutes (default: 5)")
+    parser.add_argument("--threshold", type=float, default=5.0, help="Error rate threshold percentage (default: 5.0)")
+    parser.add_argument("--min-reqs", type=int, default=10, help="Min requests in window to trigger anomaly (default: 10)")
+    parser.add_argument("--start", type=parse_filter_datetime, help="Start datetime filter (YYYY-MM-DD HH:MM:SS)")
+    parser.add_argument("--end", type=parse_filter_datetime, help="End datetime filter (YYYY-MM-DD HH:MM:SS)")
+    parser.add_argument("--format", type=str, choices=["terminal", "txt", "json"], default="terminal",
+                        help="Output format (default: terminal)")
+    args = parser.parse_args()
+    
+    detect_5xx_outages(args.log_path, window_size=args.window, threshold_pct=args.threshold,
+                      min_requests=args.min_reqs, start_time=args.start, end_time=args.end, format_opt=args.format)
