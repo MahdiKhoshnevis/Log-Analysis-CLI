@@ -1,6 +1,9 @@
 import os
 import re
 import gzip
+import json
+from datetime import datetime, timezone
+
 
 class LogEntry:
     def __init__(self, ip="EMPTY_IP", timestamp="EMPTY_TIME", method="EMPTY_METHOD",
@@ -106,23 +109,71 @@ def open_log_file(file_path):
         return gzip.open(file_path, "rt", encoding="utf-8", errors="replace")
     return open(file_path, "r", encoding="utf-8", errors="replace")
 
+def parse_filter_datetime(dt_str):
+    """
+    Parses start/end filtering datetimes. Naive datetimes are treated as UTC.
+    """
+    if not dt_str:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S %z", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(dt_str.strip(), fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            continue
+    raise argparse.ArgumentTypeError(f"Invalid datetime format: '{dt_str}'. Use YYYY-MM-DD HH:MM:SS.")
+
+def write_output(text_content: str, json_data: dict, format_opt: str, default_filename: str):
+    """
+    Outputs data to terminal, text file, or JSON file.
+    """
+    if format_opt == "terminal":
+        print(text_content)
+    elif format_opt == "txt":
+        filename = default_filename + ".txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(text_content)
+        print(f"Report successfully saved to text file: {filename}")
+    elif format_opt == "json":
+        filename = default_filename + ".json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, indent=4, default=str)
+        print(f"Data successfully saved to JSON file: {filename}")
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Read access logs line-by-line and show parsing example.")
     parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
+    parser.add_argument("--start", type=parse_filter_datetime, help="Start datetime filter (YYYY-MM-DD HH:MM:SS)")
+    parser.add_argument("--end", type=parse_filter_datetime, help="End datetime filter (YYYY-MM-DD HH:MM:SS)")
     args = parser.parse_args()
     
     log_file_path = args.log_path
+    time_format = "%d/%b/%Y:%H:%M:%S %z"
     
-    print(f"Testing parser on the first 5 lines of the log file at '{log_file_path}':\n")
+    print(f"Testing parser on the first 5 matching lines of the log file at '{log_file_path}':\n")
     try:
         with open_log_file(log_file_path) as file:
+            printed_count = 0
             for idx, line in enumerate(file, 1):
                 entry = parse_line(line)
-                print(f"--- Line {idx} ---")
+                if entry.timestamp != "EMPTY_TIME" and (args.start or args.end):
+                    try:
+                        dt = datetime.strptime(entry.timestamp, time_format)
+                        if args.start and dt < args.start:
+                            continue
+                        if args.end and dt > args.end:
+                            continue
+                    except Exception:
+                        pass
+                
+                print(f"--- Matching Line {idx} ---")
                 print(entry)
-                if idx >= 5:
+                printed_count += 1
+                if printed_count >= 5:
                     break
     except FileNotFoundError:
         print(f"Error: The log file at {log_file_path} was not found.")

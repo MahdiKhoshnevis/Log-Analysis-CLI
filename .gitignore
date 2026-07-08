@@ -16,3 +16,8 @@ __pycache__/
 # Ignore generated output charts
 *.png
 
+# Ignore generated output reports
+*.txt
+*.json
+
+
