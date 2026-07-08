@@ -3,8 +3,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from read_log import parse_line
 
-def analyze_traffic():
-    log_file_path = os.path.join("access.log", "access.log")
+def analyze_traffic(log_file_path):
     
     # Store counts of requests by hour datetime object
     hourly_counts = {}
@@ -12,7 +11,7 @@ def analyze_traffic():
     # Time format in the log: "01/Jun/2026:00:00:00 +0000"
     time_format = "%d/%b/%Y:%H:%M:%S %z"
     
-    print("Reading and parsing logs line-by-line...")
+    print(f"Reading and parsing logs line-by-line from '{log_file_path}'...")
     try:
         with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
             for line in file:
@@ -98,4 +97,11 @@ def analyze_traffic():
     print(f"Success! Bar graph generated and saved to: {output_image}")
 
 if __name__ == "__main__":
-    analyze_traffic()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate hourly traffic distribution from access logs.")
+    parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
+    args = parser.parse_args()
+    
+    analyze_traffic(args.log_path)
+

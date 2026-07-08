@@ -1,15 +1,14 @@
 import os
 from read_log import parse_line
 
-def calculate_stats():
-    log_file_path = os.path.join("access.log", "access.log")
+def calculate_stats(log_file_path):
     
     total_requests = 0
     unique_ips = set()
     path_counts = {}
     error_requests = 0
     
-    print("Reading and aggregating log stats line-by-line...")
+    print(f"Reading and aggregating log stats line-by-line from '{log_file_path}'...")
     try:
         with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
             for line in file:
@@ -68,4 +67,11 @@ def calculate_stats():
     print("="*50 + "\n")
 
 if __name__ == "__main__":
-    calculate_stats()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Calculate metrics and statistics from access logs.")
+    parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
+    args = parser.parse_args()
+    
+    calculate_stats(args.log_path)
+

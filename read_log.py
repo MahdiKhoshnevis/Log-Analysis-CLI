@@ -98,9 +98,15 @@ def parse_line(line: str) -> LogEntry:
     )
 
 if __name__ == "__main__":
-    log_file_path = os.path.join("access.log", "access.log")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Read access logs line-by-line and show parsing example.")
+    parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
+    args = parser.parse_args()
     
-    print("Testing parser on the first 5 lines of the log file:\n")
+    log_file_path = args.log_path
+    
+    print(f"Testing parser on the first 5 lines of the log file at '{log_file_path}':\n")
     try:
         with open(log_file_path, "r", encoding="utf-8", errors="replace") as file:
             for idx, line in enumerate(file, 1):
@@ -113,3 +119,4 @@ if __name__ == "__main__":
         print(f"Error: The log file at {log_file_path} was not found.")
     except Exception as e:
         print(f"An error occurred: {e}")
+
