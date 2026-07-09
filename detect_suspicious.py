@@ -1,15 +1,13 @@
-import os
-import re
 import time
 import argparse
 from datetime import datetime
-from read_log import parse_line, LogEntry, open_log_file, parse_filter_datetime, write_output
+from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 # Sensitive endpoints to monitor for automated access
 SENSITIVE_PATHS = {"/login", "/api/checkout", "/admin"}
 
 # Common keywords in automated/bot User-Agents
-BOT_KEYWORDS = {"python-requests", "curl", "wget", "http", "scrapy", "urllib", "libcurl"}
+BOT_KEYWORDS = {"python-requests", "curl", "wget", "scrapy", "urllib", "libcurl"}
 
 def get_percentile(values, percentile=0.99):
     if not values:
@@ -19,9 +17,9 @@ def get_percentile(values, percentile=0.99):
     return float(sorted_vals[idx])
 
 def is_bot_user_agent(ua: str) -> bool:
-    if ua == "EMPTY_USER_AGENT":
+    if ua is None or ua == "EMPTY_USER_AGENT":
         return True  # Empty/missing UA is highly suspicious
-    ua_lower = ua.lower()
+    ua_lower = str(ua).lower()
     return any(keyword in ua_lower for keyword in BOT_KEYWORDS)
 
 def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_time=None, format_opt="terminal"):
@@ -35,19 +33,25 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
         with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
-                if entry.ip == "EMPTY_IP":
+                
+                if entry.ip is None or entry.ip == "EMPTY_IP":
                     continue
                 
-                # Apply start/end datetime filters
-                if entry.timestamp != "EMPTY_TIME" and (start_time or end_time):
-                    try:
-                        dt = datetime.strptime(entry.timestamp, time_format)
-                        if start_time and dt < start_time:
+                # Apply start/end datetime filters safely
+                if start_time or end_time:
+                    if entry.timestamp and entry.timestamp != "EMPTY_TIME":
+                        try:
+                            dt = datetime.strptime(entry.timestamp, time_format)
+                            if start_time and dt < start_time:
+                                continue
+                            if end_time and dt > end_time:
+                                continue
+                        except ValueError:
+                            # Skip malformed timestamps when a time filter is active
                             continue
-                        if end_time and dt > end_time:
-                            continue
-                    except Exception:
-                        pass
+                    else:
+                        # Skip missing timestamps when a time filter is active
+                        continue
                 
                 if entry.ip not in ip_stats:
                     ip_stats[entry.ip] = {
@@ -61,17 +65,19 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
                 stats = ip_stats[entry.ip]
                 stats["total"] += 1
                 
-                # Check for Auth Failures (401, 403)
-                if entry.status in {"401", "403"}:
-                    stats["auth_failures"] += 1
-                
-                # Check for Not Found (404)
-                if entry.status == "404":
-                    stats["not_found"] += 1
-                
-                # Check for general client/server errors (4xx & 5xx)
-                if entry.status != "EMPTY_STATUS" and entry.status.startswith(("4", "5")):
-                    stats["errors"] += 1
+                if entry.status is not None and entry.status != "EMPTY_STATUS":
+                    status_str = str(entry.status)
+                    # Check for Auth Failures (401, 403)
+                    if status_str in {"401", "403"}:
+                        stats["auth_failures"] += 1
+                    
+                    # Check for Not Found (404)
+                    if status_str == "404":
+                        stats["not_found"] += 1
+                    
+                    # Check for general client/server errors (4xx & 5xx)
+                    if status_str.startswith(("4", "5")):
+                        stats["errors"] += 1
                 
                 # Check for automated bot hits to sensitive paths
                 if entry.path in SENSITIVE_PATHS and is_bot_user_agent(entry.user_agent):
@@ -145,7 +151,7 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
             else:
                 val = stats[metric_key]
                 
-            if val > threshold and val > 0:
+            if val >= threshold and val > 0:
                 flagged.append((ip, val, stats["total"]))
                 
         flagged.sort(key=lambda x: x[1], reverse=True)
