@@ -1,6 +1,7 @@
 import time
 import argparse
 from datetime import datetime
+from urllib.parse import urlsplit
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, format_opt="terminal"):
@@ -23,12 +24,12 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
                 entry = parse_line(line)
                 
                 # Skip completely empty lines
-                if (entry.ip is None or entry.ip == "EMPTY_IP") and (entry.timestamp is None or entry.timestamp == "EMPTY_TIME"):
+                if entry.ip is None and entry.timestamp is None:
                     continue
                 
                 # Apply start/end filters
                 if start_time or end_time:
-                    if entry.timestamp and entry.timestamp != "EMPTY_TIME":
+                    if entry.timestamp:
                         try:
                             dt = datetime.strptime(entry.timestamp, time_format)
                             if start_time and dt < start_time:
@@ -45,20 +46,17 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
                 total_requests += 1
                 
                 # Track unique IPs
-                if entry.ip and entry.ip != "EMPTY_IP":
+                if entry.ip:
                     unique_ips.add(entry.ip)
                 
                 # Track endpoint/path counts
-                if entry.path and entry.path != "EMPTY_PATH":
-                    path_counts[entry.path] = path_counts.get(entry.path, 0) + 1
+                if entry.path:
+                    clean_path = urlsplit(entry.path).path
+                    path_counts[clean_path] = path_counts.get(clean_path, 0) + 1
                     
                 # Track 4xx and 5xx errors
-                if entry.status is not None and entry.status != "EMPTY_STATUS":
-                    if isinstance(entry.status, int):
-                        if 400 <= entry.status < 600:
-                            error_requests += 1
-                    elif isinstance(entry.status, str) and entry.status.startswith(("4", "5")):
-                        error_requests += 1
+                if entry.status is not None and 400 <= entry.status < 600:
+                    error_requests += 1
 
     except FileNotFoundError:
         print(f"Error: Log file not found at {log_file_path}")
