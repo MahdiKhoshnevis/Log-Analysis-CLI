@@ -18,7 +18,7 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
         with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
-                if entry.timestamp and entry.timestamp != "EMPTY_TIME":
+                if entry.timestamp:
                     try:
                         # Parse string to timezone-aware datetime object
                         dt = datetime.strptime(entry.timestamp, time_format)
