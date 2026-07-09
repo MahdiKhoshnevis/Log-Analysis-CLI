@@ -2,13 +2,17 @@ import os
 import re
 import gzip
 import json
+import http
 from datetime import datetime, timezone
+
+VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+VALID_STATUS_CODES = {str(status.value) for status in http.HTTPStatus}
 
 
 class LogEntry:
     def __init__(self, ip="EMPTY_IP", timestamp="EMPTY_TIME", method="EMPTY_METHOD",
                  path="EMPTY_PATH", protocol="EMPTY_PROTOCOL", status="EMPTY_STATUS",
-                 size="EMPTY_SIZE", referer="EMPTY_REFERER", user_agent="EMPTY_USER_AGENT"):
+                 size="EMPTY_SIZE", user_agent="EMPTY_USER_AGENT"):
         self.ip = ip
         self.timestamp = timestamp
         self.method = method
@@ -16,7 +20,6 @@ class LogEntry:
         self.protocol = protocol
         self.status = status
         self.size = size
-        self.referer = referer
         self.user_agent = user_agent
 
     def __repr__(self):
@@ -28,7 +31,6 @@ class LogEntry:
                 f"  protocol={self.protocol!r},\n"
                 f"  status={self.status!r},\n"
                 f"  size={self.size!r},\n"
-                f"  referer={self.referer!r},\n"
                 f"  user_agent={self.user_agent!r}\n"
                 f")")
 
@@ -69,25 +71,25 @@ def parse_line(line: str) -> LogEntry:
             return filler
         return val
 
-    # Parse request details (e.g. "GET /products HTTP/1.1")
+    # Parse request details independently based on characteristics
     method = "EMPTY_METHOD"
     path = "EMPTY_PATH"
     protocol = "EMPTY_PROTOCOL"
 
     if raw_request and raw_request != "-":
         parts = raw_request.split()
-        if len(parts) >= 1:
-            method = parts[0]
-        if len(parts) >= 2:
-            path = parts[1]
-        if len(parts) >= 3:
-            protocol = parts[2]
+        for part in parts:
+            if part in VALID_METHODS and method == "EMPTY_METHOD":
+                method = part
+            elif part.startswith("HTTP/") and protocol == "EMPTY_PROTOCOL":
+                protocol = part
+            elif path == "EMPTY_PATH":
+                path = part
 
-    # Validate status code (must be 3 digits and within standard HTTP range 100-599)
+    # Validate status code using actual HTTP codes
     status = clean(raw_status, "EMPTY_STATUS")
-    if status != "EMPTY_STATUS":
-        if not (status.isdigit() and len(status) == 3 and 100 <= int(status) <= 599):
-            status = "EMPTY_STATUS"
+    if status != "EMPTY_STATUS" and status not in VALID_STATUS_CODES:
+        status = "EMPTY_STATUS"
 
     return LogEntry(
         ip=clean(raw_ip, "EMPTY_IP"),
@@ -97,7 +99,6 @@ def parse_line(line: str) -> LogEntry:
         protocol=clean(protocol, "EMPTY_PROTOCOL"),
         status=status,
         size=clean(raw_size, "EMPTY_SIZE"),
-        referer=clean(raw_referer, "EMPTY_REFERER"),
         user_agent=clean(raw_user_agent, "EMPTY_USER_AGENT")
     )
 
