@@ -1,4 +1,3 @@
-import os
 import time
 import argparse
 from datetime import datetime, timedelta
@@ -7,6 +6,11 @@ from read_log import parse_line, open_log_file, parse_filter_datetime, write_out
 def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requests=10,
                        start_time=None, end_time=None, format_opt="terminal"):
     start_time_perf = time.perf_counter()
+    
+    # Validate input parameters
+    window_size = max(1, window_size)
+    threshold_pct = max(0.0, float(threshold_pct))
+    min_requests = max(1, min_requests)
     
     # minute_stats structure: { minute_dt: {'total': int, '5xx': int} }
     minute_stats = {}
@@ -17,7 +21,8 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
         with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
-                if entry.timestamp == "EMPTY_TIME":
+                
+                if entry.timestamp is None or entry.timestamp == "EMPTY_TIME":
                     continue
                 
                 try:
@@ -36,10 +41,16 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
                         minute_stats[min_dt] = {"total": 0, "5xx": 0}
                     
                     minute_stats[min_dt]["total"] += 1
-                    if entry.status.startswith("5"):
-                        minute_stats[min_dt]["5xx"] += 1
-                        
-                except Exception:
+                    
+                    # Safely handle status which might be an int or str
+                    if entry.status is not None and entry.status != "EMPTY_STATUS":
+                        if isinstance(entry.status, int):
+                            if 500 <= entry.status < 600:
+                                minute_stats[min_dt]["5xx"] += 1
+                        elif isinstance(entry.status, str) and entry.status.startswith("5"):
+                            minute_stats[min_dt]["5xx"] += 1
+                            
+                except ValueError:
                     pass
     except FileNotFoundError:
         print(f"Error: Log file not found at {log_file_path}")
@@ -65,7 +76,6 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
         clean_stats.append(minute_stats.get(m, {"total": 0, "5xx": 0}))
 
     # Calculate sliding window metrics
-    # anomalies: list of bool indicating if the window starting at index i is anomalous
     anomalies = [False] * len(minutes_list)
     window_rates = [0.0] * len(minutes_list)
     window_totals = [0] * len(minutes_list)
@@ -96,24 +106,30 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
     current_outage = None
     
     for i, is_anomaly in enumerate(anomalies):
+        curr_min = minutes_list[i]
+        
         if is_anomaly:
-            win_start = minutes_list[i]
-            win_end = minutes_list[i] + timedelta(minutes=window_size)
-            
+            win_end = curr_min + timedelta(minutes=window_size)
             if current_outage is None:
                 current_outage = {
-                    "start": win_start,
+                    "start": curr_min,
                     "end": win_end,
-                    "peak_rate": window_rates[i],
-                    "total_reqs": 0,  # Computed below
-                    "total_5xx": 0,   # Computed below
+                    "peak_rate": window_rates[i]
                 }
             else:
-                # Extend the end of the outage period
-                current_outage["end"] = win_end
-                current_outage["peak_rate"] = max(current_outage["peak_rate"], window_rates[i])
+                if curr_min <= current_outage["end"]:
+                    # Extend and merge
+                    current_outage["end"] = max(current_outage["end"], win_end)
+                    current_outage["peak_rate"] = max(current_outage["peak_rate"], window_rates[i])
+                else:
+                    outages.append(current_outage)
+                    current_outage = {
+                        "start": curr_min,
+                        "end": win_end,
+                        "peak_rate": window_rates[i]
+                    }
         else:
-            if current_outage is not None:
+            if current_outage is not None and curr_min >= current_outage["end"]:
                 outages.append(current_outage)
                 current_outage = None
                 
@@ -152,7 +168,7 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
     if not outages:
         report_lines.append("No system outage periods detected matching the criteria.")
     else:
-        report_lines.append(f"{'Start Time (UTC)':<17} | {'End Time (UTC)':<17} | {'Duration':<8} | {'Peak Rate':<9} | {'5xx Count':<9}")
+        report_lines.append(f"{'Start Time':<17} | {'End Time':<17} | {'Duration':<8} | {'Peak Rate':<9} | {'5xx Count':<9}")
         report_lines.append("-"*70)
         for out in outages:
             dur_mins = int((out["end"] - out["start"]).total_seconds() / 60)
