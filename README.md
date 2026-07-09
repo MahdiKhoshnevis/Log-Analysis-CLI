@@ -27,7 +27,7 @@ This script defines the shared logic for parsing access log entries, handling gz
   * **Behavior:** Automatically falls back to standard filler strings (e.g. `EMPTY_IP`, `EMPTY_TIME`) if log fields are missing or empty to prevent script execution failures.
 * **parse_line(line):**
   * **Role:** Translates a raw log line into a `LogEntry` instance.
-  * **Method:** Custom regex pattern mapping the Combined Log Format. It breaks down the request string into `method`, `path`, and `protocol`, and validates status codes ensuring they are 3-digit HTTP status codes between `100` and `599`.
+  * **Method:** Custom regex pattern mapping the Combined Log Format. It leverages the strict **positional integrity** of standard Nginx/Apache logs (where empty parameters are always substituted with a `-` instead of being left out entirely) to guarantee accurate field extraction. It breaks down the request string by evaluating `method`, `path`, and `protocol` characteristics independently, and strictly validates against actual HTTP methods and status codes.
 * **open_log_file(file_path):**
   * **Role:** Transparent file loader.
   * **Method:** Detects `.gz` file extensions and automatically invokes `gzip.open` in text-mode (`"rt"`), allowing transparent line-by-line processing of compressed files.
