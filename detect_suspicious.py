@@ -1,12 +1,13 @@
 import time
 import argparse
 from datetime import datetime
+from urllib.parse import urlsplit
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 # Sensitive endpoints to monitor for automated access
 SENSITIVE_PATHS = {"/login", "/api/checkout", "/admin"}
 
-# Common keywords in automated/bot User-Agents
+# Common keywords in automated/bot User-Agents (removed "http")
 BOT_KEYWORDS = {"python-requests", "curl", "wget", "scrapy", "urllib", "libcurl"}
 
 def get_percentile(values, percentile=0.99):
@@ -17,13 +18,23 @@ def get_percentile(values, percentile=0.99):
     return float(sorted_vals[idx])
 
 def is_bot_user_agent(ua: str) -> bool:
-    if ua is None or ua == "EMPTY_USER_AGENT":
+    if ua is None:
         return True  # Empty/missing UA is highly suspicious
     ua_lower = str(ua).lower()
     return any(keyword in ua_lower for keyword in BOT_KEYWORDS)
 
+def is_sensitive_path(path: str) -> bool:
+    if not path:
+        return False
+    clean_path = urlsplit(path).path
+    return any(
+        clean_path == sensitive or clean_path.startswith(sensitive + "/")
+        for sensitive in SENSITIVE_PATHS
+    )
+
 def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_time=None, format_opt="terminal"):
     start_time_perf = time.perf_counter()
+    limit = max(1, limit)
     
     ip_stats = {}
     time_format = "%d/%b/%Y:%H:%M:%S %z"
@@ -34,12 +45,13 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
             for line in file:
                 entry = parse_line(line)
                 
-                if entry.ip is None or entry.ip == "EMPTY_IP":
+                # Skip if IP is missing
+                if entry.ip is None:
                     continue
                 
                 # Apply start/end datetime filters safely
                 if start_time or end_time:
-                    if entry.timestamp and entry.timestamp != "EMPTY_TIME":
+                    if entry.timestamp:
                         try:
                             dt = datetime.strptime(entry.timestamp, time_format)
                             if start_time and dt < start_time:
@@ -65,7 +77,7 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
                 stats = ip_stats[entry.ip]
                 stats["total"] += 1
                 
-                if entry.status is not None and entry.status != "EMPTY_STATUS":
+                if entry.status is not None:
                     status_str = str(entry.status)
                     # Check for Auth Failures (401, 403)
                     if status_str in {"401", "403"}:
@@ -80,7 +92,7 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
                         stats["errors"] += 1
                 
                 # Check for automated bot hits to sensitive paths
-                if entry.path in SENSITIVE_PATHS and is_bot_user_agent(entry.user_agent):
+                if is_sensitive_path(entry.path) and is_bot_user_agent(entry.user_agent):
                     stats["bot_sensitive"] += 1
 
     except FileNotFoundError:
@@ -146,18 +158,22 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
         
         flagged = []
         for ip, stats in ip_stats.items():
+            if is_ratio and stats["total"] < 5:
+                continue
+
             if is_ratio:
                 val = (stats["errors"] / stats["total"]) if stats["total"] > 0 else 0.0
             else:
                 val = stats[metric_key]
                 
+            # Safely catch values AT or above the threshold
             if val >= threshold and val > 0:
                 flagged.append((ip, val, stats["total"]))
                 
         flagged.sort(key=lambda x: x[1], reverse=True)
         
         json_flagged_list = []
-        for ip, val, total_req in flagged:
+        for ip, val, total_req in flagged[:limit]:
             json_flagged_list.append({
                 "ip": ip,
                 "value": val * 100 if is_ratio else val,
@@ -182,7 +198,7 @@ def analyze_suspicious_behavior(log_file_path, limit=15, start_time=None, end_ti
     process_indicator("1. High Request Volume (DoS/Scraping)", "total", threshold_total, "request_volume", " reqs")
     
     # 2. Auth Failures Outliers
-    process_indicator("2. High Authentication Failures (Brute-Force)", "auth_failures", threshold_auth, "auth_failures", " failures")
+    process_indicator("2. High Authentication/Authorization Failures", "auth_failures", threshold_auth, "auth_failures", " failures")
     
     # 3. Not Found Outliers
     process_indicator("3. High Directory Scanning (404 Fuzzing)", "not_found", threshold_not_found, "directory_scanning", " hits")
