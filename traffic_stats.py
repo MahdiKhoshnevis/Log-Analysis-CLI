@@ -1,10 +1,12 @@
-import os
 import time
+import argparse
 from datetime import datetime
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
 def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, format_opt="terminal"):
     start_time_perf = time.perf_counter()
+    
+    top_n = max(1, top_n)
     
     total_requests = 0
     unique_ips = set()
@@ -21,33 +23,41 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
                 entry = parse_line(line)
                 
                 # Skip completely empty lines
-                if entry.ip == "EMPTY_IP" and entry.timestamp == "EMPTY_TIME":
+                if (entry.ip is None or entry.ip == "EMPTY_IP") and (entry.timestamp is None or entry.timestamp == "EMPTY_TIME"):
                     continue
                 
                 # Apply start/end filters
-                if entry.timestamp != "EMPTY_TIME" and (start_time or end_time):
-                    try:
-                        dt = datetime.strptime(entry.timestamp, time_format)
-                        if start_time and dt < start_time:
+                if start_time or end_time:
+                    if entry.timestamp and entry.timestamp != "EMPTY_TIME":
+                        try:
+                            dt = datetime.strptime(entry.timestamp, time_format)
+                            if start_time and dt < start_time:
+                                continue
+                            if end_time and dt > end_time:
+                                continue
+                        except ValueError:
+                            # skip if timestamp is malformed but we need to filter
                             continue
-                        if end_time and dt > end_time:
-                            continue
-                    except Exception:
-                        pass
+                    else:
+                        # skip if missing timestamp but we need to filter
+                        continue
                 
                 total_requests += 1
                 
                 # Track unique IPs
-                if entry.ip != "EMPTY_IP":
+                if entry.ip and entry.ip != "EMPTY_IP":
                     unique_ips.add(entry.ip)
                 
                 # Track endpoint/path counts
-                if entry.path != "EMPTY_PATH":
+                if entry.path and entry.path != "EMPTY_PATH":
                     path_counts[entry.path] = path_counts.get(entry.path, 0) + 1
                     
                 # Track 4xx and 5xx errors
-                if entry.status != "EMPTY_STATUS":
-                    if entry.status.startswith(("4", "5")):
+                if entry.status is not None and entry.status != "EMPTY_STATUS":
+                    if isinstance(entry.status, int):
+                        if 400 <= entry.status < 600:
+                            error_requests += 1
+                    elif isinstance(entry.status, str) and entry.status.startswith(("4", "5")):
                         error_requests += 1
 
     except FileNotFoundError:
@@ -101,8 +111,6 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
     write_output(text_report, json_data, format_opt, "traffic_stats")
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser(description="Calculate metrics and statistics from access logs.")
     parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
     parser.add_argument("--top-n", type=int, default=10, help="Number of top frequent endpoints to show (default: 10)")
