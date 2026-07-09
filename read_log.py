@@ -1,13 +1,10 @@
 import re
 import gzip
 import json
-import http
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional, Tuple
-
-VALID_STATUS_CODES = {status.value for status in http.HTTPStatus}
 
 # Regular expression to extract standard parts of Combined Log Format.
 LOG_PATTERN = re.compile(
@@ -67,7 +64,7 @@ def parse_line(line: str) -> LogEntry:
     raw_status_clean = clean(raw_status)
     if raw_status_clean and raw_status_clean.isdigit():
         status_val = int(raw_status_clean)
-        if status_val in VALID_STATUS_CODES or status_val == 499:
+        if 100 <= status_val <= 599:
             status = status_val
 
     size = None
@@ -119,16 +116,6 @@ def parse_filter_datetime(dt_str: str) -> Optional[datetime]:
     return dt
 
 
-def parse_end_datetime(dt_str: str) -> Optional[datetime]:
-    """
-    Parses end filtering datetime. If date-only format is provided, returns the end of that day.
-    """
-    dt, fmt = _parse_dt(dt_str)
-    if dt and fmt == "%Y-%m-%d":
-        dt = dt.replace(hour=23, minute=59, second=59)
-    return dt
-
-
 def write_output(text_content: str, json_data: dict, format_opt: str, default_filename: str):
     """
     Outputs data to terminal, text file, or JSON file.
@@ -151,7 +138,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Read access logs line-by-line and show parsing example.")
     parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
     parser.add_argument("--start", type=parse_filter_datetime, help="Start datetime filter (YYYY-MM-DD HH:MM:SS)")
-    parser.add_argument("--end", type=parse_end_datetime, help="End datetime filter (YYYY-MM-DD HH:MM:SS)")
+    parser.add_argument("--end", type=parse_filter_datetime, help="End datetime filter (YYYY-MM-DD HH:MM:SS)")
     args = parser.parse_args()
     
     log_file_path = args.log_path
