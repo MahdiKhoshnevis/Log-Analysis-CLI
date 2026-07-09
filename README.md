@@ -1,8 +1,8 @@
 # Log Analysis & Security Anomaly Detection Suite
 
-This repository contains a modular, high-efficiency, zero-dependency suite of Python scripts designed to parse, analyze, and detect security/performance anomalies in web server access logs. 
+This repository contains a modular, high-efficiency, minimal-dependency suite of Python scripts designed to parse, analyze, and detect security/performance anomalies in web server access logs. 
 
-All scripts process logs **line-by-line (streaming)** to maintain low memory usage (constant $O(1)$ space complexity), ensuring they can handle extremely large files (e.g., gigabytes) without crashing or causing memory starvation.
+All scripts process logs **line-by-line (streaming)** to maintain low memory usage, ensuring they can handle extremely large files (e.g., gigabytes) without crashing or causing memory starvation.
 
 ---
 
@@ -24,7 +24,7 @@ This script defines the shared logic for parsing access log entries, handling gz
 
 * **LogEntry Class:**
   * **Role:** Lightweight data container representing a parsed log line.
-  * **Behavior:** Automatically falls back to standard filler strings (e.g. `EMPTY_IP`, `EMPTY_TIME`) if log fields are missing or empty to prevent script execution failures.
+  * **Behavior:** Automatically falls back to `None` if log fields are missing or empty to prevent script execution failures.
 * **parse_line(line):**
   * **Role:** Translates a raw log line into a `LogEntry` instance.
   * **Method:** Custom regex pattern mapping the Combined Log Format. It leverages the strict **positional integrity** of standard Nginx/Apache logs (where empty parameters are always substituted with a `-` instead of being left out entirely) to guarantee accurate field extraction. It breaks down the request string by evaluating `method`, `path`, and `protocol` characteristics independently, and strictly validates against actual HTTP methods and status codes.
