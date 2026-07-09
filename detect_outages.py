@@ -22,7 +22,7 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
             for line in file:
                 entry = parse_line(line)
                 
-                if entry.timestamp is None or entry.timestamp == "EMPTY_TIME":
+                if entry.timestamp is None:
                     continue
                 
                 try:
@@ -42,16 +42,12 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
                     
                     minute_stats[min_dt]["total"] += 1
                     
-                    # Safely handle status which might be an int or str
-                    if entry.status is not None and entry.status != "EMPTY_STATUS":
-                        if isinstance(entry.status, int):
-                            if 500 <= entry.status < 600:
-                                minute_stats[min_dt]["5xx"] += 1
-                        elif isinstance(entry.status, str) and entry.status.startswith("5"):
-                            minute_stats[min_dt]["5xx"] += 1
+                    # Safely handle status
+                    if entry.status is not None and 500 <= entry.status < 600:
+                        minute_stats[min_dt]["5xx"] += 1
                             
                 except ValueError:
-                    pass
+                    continue
     except FileNotFoundError:
         print(f"Error: Log file not found at {log_file_path}")
         return
@@ -158,26 +154,27 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
 
     # Build report text content
     report_lines = []
-    report_lines.append("\n" + "="*70)
+    report_lines.append("\n" + "="*92)
     report_lines.append("                SYSTEM 5xx OUTAGE & INCIDENT REPORT")
     report_lines.append(f"                Execution Time: {elapsed_time:.4f} seconds")
-    report_lines.append("="*70)
+    report_lines.append("="*92)
     report_lines.append(f"Parameters: Window Size = {window_size}m | Threshold = {threshold_pct}% | Min Requests = {min_requests}")
-    report_lines.append("-"*70)
+    report_lines.append("-"*92)
     
     if not outages:
         report_lines.append("No system outage periods detected matching the criteria.")
     else:
-        report_lines.append(f"{'Start Time':<17} | {'End Time':<17} | {'Duration':<8} | {'Peak Rate':<9} | {'5xx Count':<9}")
-        report_lines.append("-"*70)
+        report_lines.append(f"{'Start Time':<17} | {'End Time':<17} | {'Duration':<8} | {'Total Req':<9} | {'5xx Count':<9} | {'Avg Rate':<8} | {'Peak Rate':<9}")
+        report_lines.append("-"*92)
         for out in outages:
             dur_mins = int((out["end"] - out["start"]).total_seconds() / 60)
             dur_str = f"{dur_mins} mins"
             start_str = out["start"].strftime("%Y-%m-%d %H:%M")
             end_str = out["end"].strftime("%Y-%m-%d %H:%M")
             peak_str = f"{out['peak_rate'] * 100:.1f}%"
-            report_lines.append(f"{start_str:<17} | {end_str:<17} | {dur_str:<8} | {peak_str:<9} | {out['total_5xx']:<9,}")
-    report_lines.append("="*70 + "\n")
+            avg_str = f"{out['average_rate'] * 100:.1f}%"
+            report_lines.append(f"{start_str:<17} | {end_str:<17} | {dur_str:<8} | {out['total_reqs']:<9,} | {out['total_5xx']:<9,} | {avg_str:<8} | {peak_str:<9}")
+    report_lines.append("="*92 + "\n")
     
     text_report = "\n".join(report_lines)
     
