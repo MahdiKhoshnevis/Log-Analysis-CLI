@@ -1,5 +1,5 @@
-import os
 import time
+import argparse
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
@@ -18,7 +18,7 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
         with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
-                if entry.timestamp != "EMPTY_TIME":
+                if entry.timestamp and entry.timestamp != "EMPTY_TIME":
                     try:
                         # Parse string to timezone-aware datetime object
                         dt = datetime.strptime(entry.timestamp, time_format)
@@ -32,7 +32,7 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
                         # Normalize to the beginning of the hour (minute=0, second=0, microsecond=0)
                         hour_dt = dt.replace(minute=0, second=0, microsecond=0)
                         hourly_counts[hour_dt] = hourly_counts.get(hour_dt, 0) + 1
-                    except Exception:
+                    except ValueError:
                         # Ignore malformed timestamp entries
                         pass
     except FileNotFoundError:
@@ -65,7 +65,7 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     # Build formatted text report
     output_lines = []
     output_lines.append("\n" + "="*45)
-    output_lines.append(f"{'Time Bucket (UTC)':<25} | {'Request Count':<15}")
+    output_lines.append(f"{'Time Bucket':<25} | {'Request Count':<15}")
     output_lines.append("="*45)
     for h, count in final_data:
         time_str = h.strftime("%Y-%m-%d %H:00")
@@ -88,10 +88,10 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     write_output(text_report, json_data, format_opt, "traffic_analysis")
     
     # 2. Plot the bar graph with matplotlib
-    x_labels = [h.strftime("%H:00") for h, _ in final_data]
+    x_labels = [h.strftime("%Y-%m-%d %H:00") for h, _ in final_data]
     y_values = [count for _, count in final_data]
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6)) # slightly wider for longer dates
     
     # Render bars with a stylish modern color
     bars = plt.bar(x_labels, y_values, color="#3f51b5", edgecolor="#303f9f", alpha=0.85, width=0.6)
@@ -102,8 +102,11 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     
     # Labels and Titles
     plt.title("Hourly Traffic Distribution (Peak & Valleys Analysis)", fontsize=14, fontweight="bold", pad=15)
-    plt.xlabel("Hour of the Day (UTC)", fontsize=11, labelpad=10)
+    plt.xlabel("Hour of the Day", fontsize=11, labelpad=10)
     plt.ylabel("Number of Requests", fontsize=11, labelpad=10)
+    
+    # Rotate x labels for better date readability
+    plt.xticks(rotation=45, ha='right')
     
     # Ensure y-axis starts exactly at 0
     plt.ylim(bottom=0)
@@ -124,8 +127,6 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     print(f"Success! Bar graph generated and saved to: {output_image}")
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser(description="Generate hourly traffic distribution from access logs.")
     parser.add_argument("log_path", type=str, help="Path to the access log file (absolute or relative)")
     parser.add_argument("--start", type=parse_filter_datetime, help="Start datetime filter (YYYY-MM-DD HH:MM:SS)")
