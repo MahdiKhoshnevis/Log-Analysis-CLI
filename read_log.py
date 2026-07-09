@@ -59,6 +59,10 @@ def parse_line(line: str) -> LogEntry:
                 path = parts[1]
             if len(parts) > 2:
                 protocol = parts[2]
+                
+    VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+    if method not in VALID_METHODS:
+        method = None
 
     status = None
     raw_status_clean = clean(raw_status)
@@ -132,6 +136,8 @@ def write_output(text_content: str, json_data: dict, format_opt: str, default_fi
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=4, default=str)
         print(f"Data successfully saved to JSON file: {filename}")
+    else:
+        raise ValueError(f"Unsupported output format: {format_opt}")
 
 
 if __name__ == "__main__":
