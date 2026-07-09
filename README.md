@@ -2,7 +2,7 @@
 
 This repository contains a modular, high-efficiency, minimal-dependency suite of Python scripts designed to parse, analyze, and detect security/performance anomalies in web server access logs. 
 
-All scripts process logs **line-by-line (streaming)** to maintain low memory usage, ensuring they can handle extremely large files (e.g., gigabytes) without crashing or causing memory starvation.
+All scripts process logs **line-by-line (streaming)**, avoiding full-file loading and keeping memory usage low for large access logs. Memory usage depends on the number of unique IPs, paths, hours, and minute buckets being aggregated.
 
 ---
 
@@ -53,8 +53,8 @@ Aggregates logs by hour to reveal peak traffic volumes and valleys. Generates a 
 Computes the baseline health of the web server.
 
 * **calculate_stats(log_file_path, top_n, start_time, end_time, format_opt):**
-  * **Role:** Aggregates totals, unique users, frequent endpoints, and overall error rate.
-  * **Method:** Counts total requests and errors (4xx & 5xx). Adds client IPs to a `set` to get unique user counts. Ranks endpoints using descending sorting (`sorted(..., key=lambda x: x[1], reverse=True)[:top_n]`). Reports overall execution time.
+  * **Role:** Aggregates totals, unique client IPs, frequent endpoints, and overall error rate.
+  * **Method:** Counts total requests and errors (4xx & 5xx). Adds client IPs to a `set` to get unique client IP counts. Ranks endpoints using descending sorting (`sorted(..., key=lambda x: x[1], reverse=True)[:top_n]`). Reports overall execution time.
 
 ---
 
@@ -70,7 +70,7 @@ Flags suspicious clients using statistical outlier analysis based on **Option C 
 * **analyze_suspicious_behavior(log_file_path, limit, start_time, end_time, format_opt):**
   * **Role:** Evaluates 5 security threat indicators per IP:
     1. **High Request Volume:** Identifies scraping or application DoS.
-    2. **High Authentication Failures:** Identifies brute-force login attempts (401 & 403 status codes).
+    2. **High Authentication/Authorization Failures:** Identifies possible brute-force or access-denied patterns (401 & 403 status codes).
     3. **Directory Scanning (404 Fuzzing):** Detects path scanning tools.
     4. **High Error Ratio:** Highlights clients experiencing > 99th percentile failure rate.
     5. **Bot Activity on Sensitive Endpoints:** Flags scripted tools hitting paths like `/login`.
@@ -92,7 +92,7 @@ Pinpoints system failure intervals based on 5xx server status codes.
 
 ## How to Run the Code
 
-All scripts accept relative or absolute paths, support transparent `.gz` decompression, datetime filtering, customizable Top N outputs, and multiple output format exporters.
+All scripts accept relative or absolute paths, support transparent `.gz` decompression, datetime filtering, customizable Top N outputs, and multiple output format exporters. Date-only filters are interpreted as midnight UTC. For example, `--end "2026-06-01"` means `2026-06-01 00:00:00 UTC`. To include the full day, use `--end "2026-06-01 23:59:59"`.
 
 ```bash
 # 1. Inspect first 5 lines
