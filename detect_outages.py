@@ -3,14 +3,16 @@ import argparse
 from datetime import datetime, timedelta
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
-def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requests=10,
-                       start_time=None, end_time=None, format_opt="terminal"):
+WINDOW_SIZE = 5       # Sliding window size in minutes
+THRESHOLD_PCT = 5.0   # Error rate threshold percentage
+MIN_REQUESTS = 10     # Min requests in window to trigger anomaly
+
+def detect_5xx_outages(log_file_path, start_time=None, end_time=None, format_opt="terminal"):
     start_time_perf = time.perf_counter()
     
-    # Validate input parameters
-    window_size = max(1, window_size)
-    threshold_pct = max(0.0, float(threshold_pct))
-    min_requests = max(1, min_requests)
+    window_size = WINDOW_SIZE
+    threshold_pct = THRESHOLD_PCT
+    min_requests = MIN_REQUESTS
     
     # minute_stats structure: { minute_dt: {'total': int, '5xx': int} }
     minute_stats = {}
@@ -43,7 +45,7 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
                     minute_stats[min_dt]["total"] += 1
                     
                     # Safely handle status
-                    if entry.status is not None and 500 <= entry.status < 600:
+                    if entry.status is not None and 500 <= entry.status <= 599:
                         minute_stats[min_dt]["5xx"] += 1
                             
                 except ValueError:
@@ -115,7 +117,7 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
             else:
                 if curr_min <= current_outage["end"]:
                     # Extend and merge
-                    current_outage["end"] = max(current_outage["end"], win_end)
+                    current_outage["end"] = win_end
                     current_outage["peak_rate"] = max(current_outage["peak_rate"], window_rates[i])
                 else:
                     outages.append(current_outage)
@@ -153,48 +155,52 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
     elapsed_time = time.perf_counter() - start_time_perf
 
     # Build report text content
-    report_lines = []
-    report_lines.append("\n" + "="*92)
-    report_lines.append("                SYSTEM 5xx OUTAGE & INCIDENT REPORT")
-    report_lines.append(f"                Execution Time: {elapsed_time:.4f} seconds")
-    report_lines.append("="*92)
-    report_lines.append(f"Parameters: Window Size = {window_size}m | Threshold = {threshold_pct}% | Min Requests = {min_requests}")
-    report_lines.append("-"*92)
-    
     if not outages:
-        report_lines.append("No system outage periods detected matching the criteria.")
+        outage_rows = "No system outage periods detected matching the criteria.\n"
     else:
-        report_lines.append(f"{'Start Time':<17} | {'End Time':<17} | {'Duration':<8} | {'Total Req':<9} | {'5xx Count':<9} | {'Avg Rate':<8} | {'Peak Rate':<9}")
-        report_lines.append("-"*92)
+        rows = ""
         for out in outages:
-            dur_mins = int((out["end"] - out["start"]).total_seconds() / 60)
-            dur_str = f"{dur_mins} mins"
-            start_str = out["start"].strftime("%Y-%m-%d %H:%M")
-            end_str = out["end"].strftime("%Y-%m-%d %H:%M")
-            peak_str = f"{out['peak_rate'] * 100:.1f}%"
             avg_str = f"{out['average_rate'] * 100:.1f}%"
-            report_lines.append(f"{start_str:<17} | {end_str:<17} | {dur_str:<8} | {out['total_reqs']:<9,} | {out['total_5xx']:<9,} | {avg_str:<8} | {peak_str:<9}")
-    report_lines.append("="*92 + "\n")
-    
-    text_report = "\n".join(report_lines)
+            peak_str = f"{out['peak_rate'] * 100:.1f}%"
+            dur_str = f"{int((out['end'] - out['start']).total_seconds() / 60)} mins"
+            rows += (
+                f"{out['start'].strftime('%Y-%m-%d %H:%M'):<17} | "
+                f"{out['end'].strftime('%Y-%m-%d %H:%M'):<17} | "
+                f"{dur_str:<8} | "
+                f"{out['total_reqs']:<9,} | "
+                f"{out['total_5xx']:<9,} | "
+                f"{avg_str:<8} | "
+                f"{peak_str:<9}\n"
+            )
+        outage_rows = (
+            f"{'Start Time':<17} | {'End Time':<17} | {'Duration':<8} | {'Total Req':<9} | {'5xx Count':<9} | {'Avg Rate':<8} | {'Peak Rate':<9}\n"
+            + "-"*50 + "\n"
+            + rows
+        )
+
+    text_report = (
+        "\n" + "="*50 + "\n"
+        "                SYSTEM 5xx OUTAGE & INCIDENT REPORT\n"
+        + f"                Execution Time: {elapsed_time:.4f} seconds\n"
+        + "="*50 + "\n"
+        + f"Parameters: Window Size = {window_size}m | Threshold = {threshold_pct}% | Min Requests = {min_requests}\n"
+        + "-"*50 + "\n"
+        + outage_rows
+        + "="*50 + "\n"
+    )
     
     # Build JSON structure
     json_data = {
         "execution_time_sec": round(elapsed_time, 4),
-        "parameters": {
-            "window_size_minutes": window_size,
-            "threshold_percent": threshold_pct,
-            "min_requests": min_requests
-        },
         "incidents": [
             {
                 "start_time": out["start"].strftime("%Y-%m-%d %H:%M:%S"),
                 "end_time": out["end"].strftime("%Y-%m-%d %H:%M:%S"),
                 "duration_minutes": int((out["end"] - out["start"]).total_seconds() / 60),
-                "peak_error_rate_pct": round(out["peak_rate"] * 100, 2),
-                "average_error_rate_pct": round(out["average_rate"] * 100, 2),
                 "total_requests": out["total_reqs"],
-                "total_5xx_errors": out["total_5xx"]
+                "total_5xx_errors": out["total_5xx"],
+                "average_error_rate_pct": round(out["average_rate"] * 100, 2),
+                "peak_error_rate_pct": round(out["peak_rate"] * 100, 2)
             }
             for out in outages
         ]
@@ -205,14 +211,10 @@ def detect_5xx_outages(log_file_path, window_size=5, threshold_pct=5.0, min_requ
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Identify periods of elevated 5xx server errors.")
     parser.add_argument("log_path", type=str, help="Path to the access log file")
-    parser.add_argument("--window", type=int, default=5, help="Sliding window size in minutes (default: 5)")
-    parser.add_argument("--threshold", type=float, default=5.0, help="Error rate threshold percentage (default: 5.0)")
-    parser.add_argument("--min-reqs", type=int, default=10, help="Min requests in window to trigger anomaly (default: 10)")
     parser.add_argument("--start", type=parse_filter_datetime, help="Start datetime filter (YYYY-MM-DD HH:MM:SS)")
     parser.add_argument("--end", type=parse_filter_datetime, help="End datetime filter (YYYY-MM-DD HH:MM:SS)")
     parser.add_argument("--format", type=str, choices=["terminal", "txt", "json"], default="terminal",
                         help="Output format (default: terminal)")
     args = parser.parse_args()
-    
-    detect_5xx_outages(args.log_path, window_size=args.window, threshold_pct=args.threshold,
-                      min_requests=args.min_reqs, start_time=args.start, end_time=args.end, format_opt=args.format)
+
+    detect_5xx_outages(args.log_path, start_time=args.start, end_time=args.end, format_opt=args.format)
