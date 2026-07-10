@@ -114,7 +114,7 @@ def _parse_dt(dt_str: str) -> Tuple[Optional[datetime], Optional[str]]:
 
 def parse_filter_datetime(dt_str: str) -> Optional[datetime]:
     """
-    Parses start filtering datetime. Naive datetimes are treated as UTC.
+    Parses a start or end filtering datetime string. Naive datetimes are treated as UTC.
     """
     dt, _ = _parse_dt(dt_str)
     return dt
@@ -180,18 +180,27 @@ if __name__ == "__main__":
                             skipped_lines += 1
                             continue
                     except ValueError:
-                        pass
+                        continue
                 
                 if printed_count < 5:
                     print(f"--- Matching Line {idx} ---")
                     print(entry)
                     printed_count += 1
 
-            print("\n--- Summary ---")
-            print(f"Total lines: {total_lines}")
-            print(f"Successfully parsed: {parsed_lines}")
-            print(f"Invalid lines: {invalid_lines}")
-            print(f"Skipped (time filter): {skipped_lines}")
+            summary_text = (
+                "\n--- Summary ---\n"
+                f"Total lines: {total_lines}\n"
+                f"Successfully parsed: {parsed_lines}\n"
+                f"Invalid lines: {invalid_lines}\n"
+                f"Skipped (time filter): {skipped_lines}"
+            )
+            summary_json = {
+                "total_lines": total_lines,
+                "parsed_lines": parsed_lines,
+                "invalid_lines": invalid_lines,
+                "skipped_lines": skipped_lines,
+            }
+            write_output(summary_text, summary_json, "terminal", "read_log_summary")
 
     except FileNotFoundError:
         print(f"Error: The log file at {log_file_path} was not found.")
