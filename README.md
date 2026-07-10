@@ -67,7 +67,7 @@ Flags suspicious clients using statistical outlier analysis based on **Option C 
 * **is_bot_user_agent(ua):**
   * **Role:** Identifies automated HTTP script libraries.
   * **Method:** Matches headers against bot/tool signatures (e.g., `python-requests`, `curl`, `wget`) or catches completely empty headers.
-* **analyze_suspicious_behavior(log_file_path, limit, start_time, end_time, format_opt):**
+* **analyze_suspicious_behavior(log_file_path, start_time, end_time, format_opt):**
   * **Role:** Evaluates 5 security threat indicators per IP:
     1. **High Request Volume:** Identifies scraping or application DoS.
     2. **High Authentication/Authorization Failures:** Identifies possible brute-force or access-denied patterns (401 & 403 status codes).
@@ -80,19 +80,19 @@ Flags suspicious clients using statistical outlier analysis based on **Option C 
 ### 5. Outage Incident Detector: `detect_outages.py`
 Pinpoints system failure intervals based on 5xx server status codes.
 
-* **detect_5xx_outages(log_file_path, window_size, threshold_pct, min_requests, start_time, end_time, format_opt):**
+* **detect_5xx_outages(log_file_path, start_time, end_time, format_opt):**
   * **Role:** Performs sliding-window 5xx error rate spikes identification.
   * **Method:**
     1. Groups logs into 1-minute fixed buckets.
     2. Runs a sliding window (e.g., 5 minutes) to compute the error rate.
-    3. Flags windows where error rate exceeds `threshold_pct` (default: 5.0%) and traffic meets `min_requests`.
+    3. Flags windows where error rate exceeds `THRESHOLD_PCT` (default: 5.0%) and traffic meets `MIN_REQUESTS` (default: 10). These values are defined as module-level constants.
     4. Merges overlapping anomalous windows into singular contiguous outage incidents. Reports duration, total errors, average failure rate, and peak error rate.
 
 ---
 
 ## How to Run the Code
 
-All scripts accept relative or absolute paths, support transparent `.gz` decompression, datetime filtering, customizable Top N outputs, and multiple output format exporters. Date-only filters are interpreted as midnight UTC. For example, `--end "2026-06-01"` means `2026-06-01 00:00:00 UTC`. To include the full day, use `--end "2026-06-01 23:59:59"`.
+All scripts accept relative or absolute paths, support transparent `.gz` decompression, datetime filtering, and multiple output format exporters. Date-only filters are interpreted as midnight UTC. For example, `--end "2026-06-01"` means `2026-06-01 00:00:00 UTC`. To include the full day, use `--end "2026-06-01 23:59:59"`. Fixed parameters like sliding window size, error thresholds, and result limits are defined as uppercase constants at the top of each script.
 
 ```bash
 # 1. Inspect first 5 lines
@@ -104,9 +104,9 @@ python3 traffic_analysis.py access.log/access.log --format terminal
 # 3. View the top 5 endpoints and statistics between a specific timeframe
 python3 traffic_stats.py access.log/access.log --top-n 5 --start "2026-06-01 02:00:00" --end "2026-06-01 05:00:00" --format json
 
-# 4. Detect top 5 suspicious IP threats
-python3 detect_suspicious.py access.log/access.log --top-n 5 --format terminal
+# 4. Detect suspicious IP threats
+python3 detect_suspicious.py access.log/access.log --format terminal
 
 # 5. Detect system outages / 5xx incidents
-python3 detect_outages.py access.log/access.log --window 5 --threshold 5.0 --format txt
+python3 detect_outages.py access.log/access.log --format txt
 ```
