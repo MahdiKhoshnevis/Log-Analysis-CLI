@@ -23,8 +23,7 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
             for line in file:
                 entry = parse_line(line)
                 
-                # Skip completely empty lines
-                if entry.ip is None and entry.timestamp is None:
+                if entry.ip is None:
                     continue
                 
                 # Apply start/end filters
@@ -55,7 +54,7 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
                     path_counts[clean_path] = path_counts.get(clean_path, 0) + 1
                     
                 # Track 4xx and 5xx errors
-                if entry.status is not None and 400 <= entry.status < 600:
+                if entry.status is not None and 400 <= entry.status <= 599:
                     error_requests += 1
 
     except FileNotFoundError:
@@ -77,28 +76,30 @@ def calculate_stats(log_file_path, top_n=10, start_time=None, end_time=None, for
     elapsed_time = time.perf_counter() - start_time_perf
 
     # Build report text content
-    output_lines = []
-    output_lines.append("\n" + "="*50)
-    output_lines.append("                 LOG ANALYSIS REPORT")
-    output_lines.append("="*50)
-    output_lines.append(f"Total Requests:           {total_requests:,}")
-    output_lines.append(f"Unique Client IPs:        {total_unique_ips:,}")
-    output_lines.append(f"Error Rate (4xx & 5xx):   {error_rate:.2f}% ({error_requests:,} requests)")
-    output_lines.append(f"Execution Time:           {elapsed_time:.4f} seconds")
-    output_lines.append("="*50)
-    output_lines.append(f"Top {top_n} Most Frequent Endpoints:")
-    output_lines.append("-"*50)
-    for rank, (path, count) in enumerate(top_endpoints, 1):
-        output_lines.append(f"{rank:2d}. {path:<30} | {count:<10,} requests")
-    output_lines.append("="*50 + "\n")
-    text_report = "\n".join(output_lines)
+    text_report = (
+        "\n" + "="*50 + "\n"
+        "                 LOG ANALYSIS REPORT\n"
+        + "="*50 + "\n"
+        + f"Total Requests:           {total_requests:,}\n"
+        + f"Unique Client IPs:        {total_unique_ips:,}\n"
+        + f"Error Rate (4xx & 5xx):   {error_rate:.2f}% ({error_requests:,} requests)\n"
+        + f"Execution Time:           {elapsed_time:.4f} seconds\n"
+        + "="*50 + "\n"
+        + f"Top {top_n} Most Frequent Endpoints:\n"
+        + "-"*50 + "\n"
+        + "".join(
+            f"{rank:2d}. {path:<30} | {count:<10,} requests\n"
+            for rank, (path, count) in enumerate(top_endpoints, 1)
+        )
+        + "="*50 + "\n"
+    )
     
     # Build JSON structure
     json_data = {
         "total_requests": total_requests,
         "unique_ips": total_unique_ips,
-        "error_requests": error_requests,
         "error_rate_pct": error_rate,
+        "error_requests": error_requests,
         "execution_time_sec": round(elapsed_time, 4),
         "top_endpoints": [
             {"path": path, "count": count} for path, count in top_endpoints
