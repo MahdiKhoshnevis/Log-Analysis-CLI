@@ -18,23 +18,23 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
         with open_log_file(log_file_path) as file:
             for line in file:
                 entry = parse_line(line)
-                if entry.timestamp:
-                    try:
-                        # Parse string to timezone-aware datetime object
-                        dt = datetime.strptime(entry.timestamp, time_format)
-                        
-                        # Apply start/end filters
-                        if start_time and dt < start_time:
-                            continue
-                        if end_time and dt > end_time:
-                            continue
-                            
-                        # Normalize to the beginning of the hour (minute=0, second=0, microsecond=0)
-                        hour_dt = dt.replace(minute=0, second=0, microsecond=0)
-                        hourly_counts[hour_dt] = hourly_counts.get(hour_dt, 0) + 1
-                    except ValueError:
-                        # Ignore malformed timestamp entries
-                        pass
+                if entry.timestamp is None:
+                    continue
+                try:
+                    # Parse string to timezone-aware datetime object
+                    dt = datetime.strptime(entry.timestamp, time_format)
+
+                    # Apply start/end filters
+                    if start_time and dt < start_time:
+                        continue
+                    if end_time and dt > end_time:
+                        continue
+
+                    # Normalize to the beginning of the hour (minute=0, second=0, microsecond=0)
+                    hour_dt = dt.replace(minute=0, second=0, microsecond=0)
+                    hourly_counts[hour_dt] = hourly_counts.get(hour_dt, 0) + 1
+                except ValueError:
+                    continue
     except FileNotFoundError:
         print(f"Error: Log file not found at {log_file_path}")
         return
@@ -63,17 +63,18 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     elapsed_time = time.perf_counter() - start_time_perf
 
     # Build formatted text report
-    output_lines = []
-    output_lines.append("\n" + "="*45)
-    output_lines.append(f"{'Time Bucket':<25} | {'Request Count':<15}")
-    output_lines.append("="*45)
-    for h, count in final_data:
-        time_str = h.strftime("%Y-%m-%d %H:00")
-        output_lines.append(f"{time_str:<25} | {count:<15,}")
-    output_lines.append("="*45)
-    output_lines.append(f"Execution Time: {elapsed_time:.4f} seconds")
-    output_lines.append("="*45 + "\n")
-    text_report = "\n".join(output_lines)
+    text_report = (
+        "\n" + "="*50 + "\n"
+        + f"{'Time Bucket':<25} | {'Request Count':<15}\n"
+        + "="*50 + "\n"
+        + "".join(
+            f"{h.strftime('%Y-%m-%d %H:00'):<25} | {count:<15,}\n"
+            for h, count in final_data
+        )
+        + "="*50 + "\n"
+        + f"Execution Time: {elapsed_time:.4f} seconds\n"
+        + "="*50 + "\n"
+    )
     
     # Build JSON structured data
     json_data = {
