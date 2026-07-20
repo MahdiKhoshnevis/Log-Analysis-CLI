@@ -62,19 +62,23 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
         
     elapsed_time = time.perf_counter() - start_time_perf
 
-    # Build formatted text report
-    text_report = (
-        "\n" + "="*50 + "\n"
-        + f"{'Time Bucket':<25} | {'Request Count':<15}\n"
-        + "="*50 + "\n"
-        + "".join(
-            f"{h.strftime('%Y-%m-%d %H:00'):<25} | {count:<15,}\n"
-            for h, count in final_data
-        )
-        + "="*50 + "\n"
-        + f"Execution Time: {elapsed_time:.4f} seconds\n"
-        + "="*50 + "\n"
+    BAR_WIDTH = 35
+    max_count = max(count for _, count in final_data) if final_data else 1
+    bar_rows = "".join(
+        f"{h.strftime('%Y-%m-%d %H:00')} | {'█' * int((count / max_count) * BAR_WIDTH):<{BAR_WIDTH}} {count:>10,}\n"
+        for h, count in final_data
     )
+
+    text_report = (
+        "\n" + "="*62 + "\n"
+        + "  HOURLY TRAFFIC DISTRIBUTION\n"
+        + "="*62 + "\n"
+        + bar_rows
+        + "="*62 + "\n"
+        + f"Execution Time: {elapsed_time:.4f} seconds\n"
+        + "="*62 + "\n"
+    )
+
     
     # Build JSON structured data
     json_data = {
