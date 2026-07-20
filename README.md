@@ -1,112 +1,98 @@
-# Log Analysis & Security Anomaly Detection Suite
+# 🔍 Log Analysis CLI
 
-This repository contains a modular, high-efficiency, minimal-dependency suite of Python scripts designed to parse, analyze, and detect security/performance anomalies in web server access logs. 
-
-All scripts process logs **line-by-line (streaming)**, avoiding full-file loading and keeping memory usage low for large access logs. Memory usage depends on the number of unique IPs, paths, hours, and minute buckets being aggregated.
+> A modular Python suite for parsing, analyzing, and detecting security/performance anomalies in web server access logs — streaming line-by-line to keep memory lean even on large files.
 
 ---
 
-## Workspace Sitemap & Files
+## 📁 Files
 
-* **read_log.py:** Core parser and shared utility module.
-* **traffic_analysis.py:** Hourly traffic peaks/valleys evaluator and chart generator.
-* **traffic_stats.py:** Global traffic metrics, top N endpoint ranking, and error counts.
-* **detect_suspicious.py:** 99th-percentile anomaly and security threat detector.
-* **detect_outages.py:** Sliding window 5xx system outage tracker.
-* **.gitignore:** Standard git exclusions (untracked caches, PNGs, and report files).
-
----
-
-## Detailed Script Descriptions & Function Breakdown
-
-### 1. Core Parser Module: `read_log.py`
-This script defines the shared logic for parsing access log entries, handling gzip compressed logs, parsing command-line parameters, and formatting output results.
-
-* **LogEntry Class:**
-  * **Role:** Lightweight data container representing a parsed log line.
-  * **Behavior:** Automatically falls back to `None` if log fields are missing or empty to prevent script execution failures.
-* **parse_line(line):**
-  * **Role:** Translates a raw log line into a `LogEntry` instance.
-  * **Method:** Custom regex pattern mapping the Combined Log Format. It leverages the strict **positional integrity** of standard Nginx/Apache logs (where empty parameters are always substituted with a `-` instead of being left out entirely) to guarantee accurate field extraction. It breaks down the request string by evaluating `method`, `path`, and `protocol` characteristics independently, and strictly validates against actual HTTP methods and status codes.
-* **open_log_file(file_path):**
-  * **Role:** Transparent file loader.
-  * **Method:** Detects `.gz` file extensions and automatically invokes `gzip.open` in text-mode (`"rt"`), allowing transparent line-by-line processing of compressed files.
-* **parse_filter_datetime(dt_str):**
-  * **Role:** String-to-datetime parser for time filters.
-  * **Method:** Supports formats like `YYYY-MM-DD HH:MM:SS` (with or without timezone offset). Automatically treats naive datetimes as UTC-aware.
-* **write_output(text_content, json_data, format_opt, default_filename):**
-  * **Role:** Report exporter.
-  * **Method:** Directs the output depending on formatting arguments (`terminal` print, writing a `.txt` report, or exporting structured metrics to a `.json` file).
+| File | Purpose |
+|---|---|
+| `main.py` | Unified CLI entry point — runs all 4 analyses in sequence |
+| `read_log.py` | Core parser & shared utilities |
+| `traffic_analysis.py` | Hourly traffic peaks/valleys + chart generator |
+| `traffic_stats.py` | Global request stats, top-N endpoints, error counts |
+| `detect_suspicious.py` | 99th-percentile IP anomaly & threat detector |
+| `detect_outages.py` | Sliding-window 5xx outage incident tracker |
 
 ---
 
-### 2. Hourly Traffic Analyzer: `traffic_analysis.py`
-Aggregates logs by hour to reveal peak traffic volumes and valleys. Generates a visual plot using `matplotlib`.
+## 🧩 Functions at a Glance
 
-* **analyze_traffic(log_file_path, start_time, end_time, format_opt):**
-  * **Role:** Groups requests chronologically by hour.
-  * **Method:** Filters out data outside start/end ranges. It generates all hour blocks between the first and last timestamps (inserting `0` for hours that had no requests) to prevent gaps in charts. Saves the result as `traffic_chart.png` and calls `write_output`.
+### `read_log.py`
+| Function | What it does |
+|---|---|
+| `LogEntry` | Dataclass holding all parsed fields for a single log line. |
+| `parse_line(line)` | Converts a raw log string into a `LogEntry` using a regex against the Combined Log Format. |
+| `open_log_file(path)` | Opens a log file, automatically using `gzip.open` if the path ends in `.gz`. |
+| `parse_filter_datetime(dt_str)` | Parses a datetime string (`YYYY-MM-DD HH:MM:SS`) into a UTC-aware `datetime` object. |
+| `write_output(...)` | Routes results to terminal, `.txt`, or `.json` depending on `--format`. |
 
----
+### `traffic_analysis.py`
+| Function | What it does |
+|---|---|
+| `analyze_traffic(...)` | Buckets requests by hour, fills zero-traffic gaps, saves a `traffic_chart.png`, and prints/exports the result. |
 
-### 3. Log Statistics Report: `traffic_stats.py`
-Computes the baseline health of the web server.
+### `traffic_stats.py`
+| Function | What it does |
+|---|---|
+| `calculate_stats(...)` | Aggregates total requests, unique IPs, 4xx/5xx error counts, and ranks the top-N endpoints by hit count. |
 
-* **calculate_stats(log_file_path, top_n, start_time, end_time, format_opt):**
-  * **Role:** Aggregates totals, unique client IPs, frequent endpoints, and overall error rate.
-  * **Method:** Counts total requests and errors (4xx & 5xx). Adds client IPs to a `set` to get unique client IP counts. Ranks endpoints using descending sorting (`sorted(..., key=lambda x: x[1], reverse=True)[:top_n]`). Reports overall execution time.
+### `detect_suspicious.py`
+| Function | What it does |
+|---|---|
+| `get_percentile(values, p)` | Pure-Python percentile calculation (sorts and indexes into the list). |
+| `is_bot_user_agent(ua)` | Returns `True` if the User-Agent matches known bot/tool signatures like `curl`, `wget`, `python-requests`. |
+| `analyze_suspicious_behavior(...)` | Flags IPs that exceed the 99th percentile on request volume, 401/403 rate, 404 scanning, error ratio, or bot activity on sensitive paths. |
 
----
-
-### 4. Anomaly Threat Detector: `detect_suspicious.py`
-Flags suspicious clients using statistical outlier analysis based on **Option C (99th-Percentile Anomaly Detection)**.
-
-* **get_percentile(values, percentile):**
-  * **Role:** Pure-Python percentile computation.
-  * **Method:** Sorts values and retrieves the value matching the specified percentile index.
-* **is_bot_user_agent(ua):**
-  * **Role:** Identifies automated HTTP script libraries.
-  * **Method:** Matches headers against bot/tool signatures (e.g., `python-requests`, `curl`, `wget`) or catches completely empty headers.
-* **analyze_suspicious_behavior(log_file_path, start_time, end_time, format_opt):**
-  * **Role:** Evaluates 5 security threat indicators per IP:
-    1. **High Request Volume:** Identifies scraping or application DoS.
-    2. **High Authentication/Authorization Failures:** Identifies possible brute-force or access-denied patterns (401 & 403 status codes).
-    3. **Directory Scanning (404 Fuzzing):** Detects path scanning tools.
-    4. **High Error Ratio:** Highlights clients experiencing > 99th percentile failure rate.
-    5. **Bot Activity on Sensitive Endpoints:** Flags scripted tools hitting paths like `/login`.
+### `detect_outages.py`
+| Function | What it does |
+|---|---|
+| `detect_5xx_outages(...)` | Groups logs into 1-minute buckets, slides a 5-minute window over them, and reports merged outage intervals where the 5xx rate exceeds the threshold. |
 
 ---
 
-### 5. Outage Incident Detector: `detect_outages.py`
-Pinpoints system failure intervals based on 5xx server status codes.
+## 🚀 How to Run
 
-* **detect_5xx_outages(log_file_path, start_time, end_time, format_opt):**
-  * **Role:** Performs sliding-window 5xx error rate spikes identification.
-  * **Method:**
-    1. Groups logs into 1-minute fixed buckets.
-    2. Runs a sliding window (e.g., 5 minutes) to compute the error rate.
-    3. Flags windows where error rate exceeds `THRESHOLD_PCT` (default: 5.0%) and traffic meets `MIN_REQUESTS` (default: 10). These values are defined as module-level constants.
-    4. Merges overlapping anomalous windows into singular contiguous outage incidents. Reports duration, total errors, average failure rate, and peak error rate.
-
----
-
-## How to Run the Code
-
-All scripts accept relative or absolute paths, support transparent `.gz` decompression, datetime filtering, and multiple output format exporters. Date-only filters are interpreted as midnight UTC. For example, `--end "2026-06-01"` means `2026-06-01 00:00:00 UTC`. To include the full day, use `--end "2026-06-01 23:59:59"`. Fixed parameters like sliding window size, error thresholds, and result limits are defined as uppercase constants at the top of each script.
+### `main.py` — Run everything at once
 
 ```bash
-# 1. Inspect first 5 lines
+python3 main.py <log_file> [OPTIONS]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `log_path` | *(required)* | Path to the log file (plain or `.gz`) |
+| `--top-n N` | `10` | Number of top endpoints to display in the stats report |
+| `--start "YYYY-MM-DD HH:MM:SS"` | *(none)* | Filter out entries before this datetime (UTC) |
+| `--end "YYYY-MM-DD HH:MM:SS"` | *(none)* | Filter out entries after this datetime (UTC) |
+
+**Example:**
+```bash
+python3 main.py access.log/access.log --top-n 5 --start "2026-06-01 00:00:00" --end "2026-06-01 23:59:59"
+```
+
+> **Note:** Date-only values like `--end "2026-06-01"` resolve to **midnight UTC**, so use `23:59:59` to include the full day.
+
+---
+
+### Individual Scripts
+
+Each script also runs standalone and supports `--format terminal | txt | json`:
+
+```bash
+# Test the parser and inspect the first 5 matching entries
 python3 read_log.py access.log/access.log
 
-# 2. Compute hourly traffic and generate a matplotlib chart
+# Hourly traffic chart + analysis
 python3 traffic_analysis.py access.log/access.log --format terminal
 
-# 3. View the top 5 endpoints and statistics between a specific timeframe
+# Top-5 endpoints + stats for a specific window
 python3 traffic_stats.py access.log/access.log --top-n 5 --start "2026-06-01 02:00:00" --end "2026-06-01 05:00:00" --format json
 
-# 4. Detect suspicious IP threats
+# Flag suspicious IPs
 python3 detect_suspicious.py access.log/access.log --format terminal
 
-# 5. Detect system outages / 5xx incidents
+# Detect 5xx outage incidents
 python3 detect_outages.py access.log/access.log --format txt
 ```
