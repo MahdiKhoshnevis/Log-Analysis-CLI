@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
-def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="terminal"):
+def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="terminal", plot=True):
     start_time_perf = time.perf_counter()
     
     # Store counts of requests by hour datetime object
@@ -88,7 +88,10 @@ def analyze_traffic(log_file_path, start_time=None, end_time=None, format_opt="t
     # Handle report output
     write_output(text_report, json_data, format_opt, "traffic_analysis")
     
-    # 2. Plot the bar graph with matplotlib
+    if not plot:
+        return
+
+    # Plot the bar graph with matplotlib
     x_labels = [h.strftime("%Y-%m-%d %H:00") for h, _ in final_data]
     y_values = [count for _, count in final_data]
     

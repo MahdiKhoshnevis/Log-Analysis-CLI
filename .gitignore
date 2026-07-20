@@ -9,6 +9,9 @@ __MACOSX/
 access.log/__MACOSX/
 **/__MACOSX/
 
+# Ignore internal notes
+NOTES.md
+
 # Ignore Python cache
 __pycache__/
 *.py[cod]
