@@ -3,9 +3,9 @@ import argparse
 from datetime import datetime, timedelta
 from read_log import parse_line, open_log_file, parse_filter_datetime, write_output
 
-WINDOW_SIZE = 5       # Sliding window size in minutes
+WINDOW_SIZE = 10      # Sliding window size in minutes
 THRESHOLD_PCT = 5.0   # Error rate threshold percentage
-MIN_REQUESTS = 10     # Min requests in window to trigger anomaly
+MIN_REQUESTS = 5      # Min requests in window to trigger anomaly
 
 def detect_5xx_outages(log_file_path, start_time=None, end_time=None, format_opt="terminal"):
     start_time_perf = time.perf_counter()
